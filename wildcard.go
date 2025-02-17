@@ -1,24 +1,28 @@
 package strutils
 
-/*
- * MinIO Cloud Storage, (C) 2015, 2016 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// extracted from github.com/malumar/pkg/wildcard/match.go
+
+// Copyright (c) 2015-2023 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // MatchSimple - finds whether the text matches/satisfies the pattern string.
-// supports only '*' wildcard in the pattern.
-// considers a file system path as a flat name space.
+// supports '*' wildcard in the pattern and ? for single characters.
+// Only difference to Match is that `?` at the end is optional,
+// meaning `a?` pattern will match name `a`.
 func MatchSimple(pattern, name string) bool {
 	if pattern == "" {
 		return name == pattern
@@ -26,16 +30,8 @@ func MatchSimple(pattern, name string) bool {
 	if pattern == "*" {
 		return true
 	}
-	rname := make([]rune, 0, len(name))
-	rpattern := make([]rune, 0, len(pattern))
-	for _, r := range name {
-		rname = append(rname, r)
-	}
-	for _, r := range pattern {
-		rpattern = append(rpattern, r)
-	}
-	simple := true // Does only wildcard '*' match.
-	return deepMatchRune(rname, rpattern, simple)
+	// Do an extended wildcard '*' and '?' match.
+	return deepMatchRune(name, pattern, true)
 }
 
 // Match -  finds whether the text matches/satisfies the pattern string.
@@ -49,19 +45,11 @@ func Match(pattern, name string) (matched bool) {
 	if pattern == "*" {
 		return true
 	}
-	rname := make([]rune, 0, len(name))
-	rpattern := make([]rune, 0, len(pattern))
-	for _, r := range name {
-		rname = append(rname, r)
-	}
-	for _, r := range pattern {
-		rpattern = append(rpattern, r)
-	}
-	simple := false // Does extended wildcard '*' and '?' match.
-	return deepMatchRune(rname, rpattern, simple)
+	// Do an extended wildcard '*' and '?' match.
+	return deepMatchRune(name, pattern, false)
 }
 
-func deepMatchRune(str, pattern []rune, simple bool) bool {
+func deepMatchRune(str, pattern string, simple bool) bool {
 	for len(pattern) > 0 {
 		switch pattern[0] {
 		default:
@@ -69,15 +57,45 @@ func deepMatchRune(str, pattern []rune, simple bool) bool {
 				return false
 			}
 		case '?':
-			if len(str) == 0 && !simple {
-				return false
+			if len(str) == 0 {
+				return simple
 			}
 		case '*':
-			return deepMatchRune(str, pattern[1:], simple) ||
-				(len(str) > 0 && deepMatchRune(str[1:], pattern, simple))
+			return len(pattern) == 1 || // Pattern ends with this star
+				deepMatchRune(str, pattern[1:], simple) || // Matches next part of pattern
+				(len(str) > 0 && deepMatchRune(str[1:], pattern, simple)) // Continue searching forward
 		}
 		str = str[1:]
 		pattern = pattern[1:]
 	}
 	return len(str) == 0 && len(pattern) == 0
+}
+
+// MatchAsPatternPrefix matches text as a prefix of the given pattern. Examples:
+//
+//	| Pattern | Text    | Match Result |
+//	====================================
+//	| abc*    | ab      | True         |
+//	| abc*    | abd     | False        |
+//	| abc*c   | abcd    | True         |
+//	| ab*??d  | abxxc   | True         |
+//	| ab*??d  | abxc    | True         |
+//	| ab??d   | abxc    | True         |
+//	| ab??d   | abc     | True         |
+//	| ab??d   | abcxdd  | False        |
+//
+// This function is only useful in some special situations.
+func MatchAsPatternPrefix(pattern, text string) bool {
+	for i := 0; i < len(text) && i < len(pattern); i++ {
+		if pattern[i] == '*' {
+			return true
+		}
+		if pattern[i] == '?' {
+			continue
+		}
+		if pattern[i] != text[i] {
+			return false
+		}
+	}
+	return len(text) <= len(pattern)
 }
