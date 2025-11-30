@@ -16,7 +16,7 @@ func IsLowerAlphaNumDashUnderscore(s string) bool {
 		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' && c != '-' {
 			return false
 		}
-		if i == 0 || i == len(s)-1 && (c == '_' || c == '-') {
+		if (i == 0 || i == len(s)-1) && (c == '_' || c == '-') {
 			return false
 		}
 	}
